@@ -1,0 +1,21 @@
+body {
+    padding: 0;
+    margin: 0;
+}
+html, body, #map {
+    height: 70vh;
+    width: 100vw;
+}
+#note {
+    height: 30vh;
+    width: 100vw;
+}
+#note p{
+    padding:5px;
+}
+#note h1 {
+    text-align:center;
+    font-size:16px;
+    margin:0;
+    padding:5px;
+}

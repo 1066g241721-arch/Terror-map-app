@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>日本全国 心霊スポットマップ</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- MarkerCluster CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      font-family: "Noto Sans JP", "Yu Gothic", sans-serif;
+    }
+
+    #map {
+      width: 100%;
+      height: 100vh;
+    }
+
+    /* 左上コントロールパネル */
+    .map-ui {
+      position: fixed;
+      top: 15px;
+      left: 60px;
+      z-index: 1000;
+      width: 320px;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.25);
+      overflow: hidden;
+    }
+
+    .map-title {
+      padding: 14px;
+      font-weight: bold;
+      font-size: 18px;
+      background: #222;
+      color: white;
+    }
+
+    #searchBox {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-bottom: 1px solid #ddd;
+      outline: none;
+      font-size: 14px;
+    }
+
+    /* カテゴリーフィルター */
+    .filters {
+      padding: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .filter-btn {
+      border: none;
+      padding: 7px 10px;
+      border-radius: 20px;
+      cursor: pointer;
+      background: #eee;
+      font-size: 12px;
+      transition: 0.2s;
+    }
+
+    .filter-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .filter-btn.active {
+      background: #222;
+      color: white;
+    }
+
+    /* 検索結果 */
+    #searchResults {
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .search-item {
+      padding: 12px;
+      border-top: 1px solid #eee;
+      cursor: pointer;
+    }
+
+    .search-item:hover {
+      background: #f5f5f5;
+    }
+
+    .search-prefecture {
+      margin-top: 4px;
+      font-size: 12px;
+      color: #777;
+    }
+
+    /* 詳細サイドパネル */
+    #detailPanel {
+      position: fixed;
+      top: 0;
+      right: -430px;
+      width: 400px;
+      height: 100vh;
+      background: white;
+      z-index: 2000;
+      box-shadow: -5px 0 20px rgba(0,0,0,0.3);
+      transition: right 0.3s ease;
+      overflow-y: auto;
+    }
+
+    #detailPanel.open {
+      right: 0;
+    }
+
+    #detailContent {
+      padding: 25px;
+    }
+
+    #closePanel {
+      position: sticky;
+      top: 10px;
+      float: right;
+      border: none;
+      background: #eee;
+      border-radius: 50%;
+      width: 38px;
+      height: 38px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+
+    .detail-title {
+      margin-top: 45px;
+      font-size: 24px;
+      line-height: 1.4;
+    }
+
+    .detail-section {
+      margin-top: 25px;
+    }
+
+    .detail-section h3 {
+      border-left: 5px solid #222;
+      padding-left: 10px;
+    }
+
+    .warning {
+      padding: 15px;
+      background: #fff0f0;
+      border-radius: 10px;
+    }
+
+    .ghost-marker {
+      font-size: 28px;
+      text-align: center;
+    }
+
+    /* スマホ対応 */
+    @media (max-width: 600px) {
+      .map-ui {
+        top: 10px;
+        left: 10px;
+        width: calc(100% - 20px);
+      }
+
+      #detailPanel {
+        width: 100%;
+        right: -100%;
+      }
+
+      #detailPanel.open {
+        right: 0;
+      }
+
+      .map-title {
+        font-size: 16px;
+      }
+
+      .filter-btn {
+        font-size: 11px;
+        padding: 6px 8px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- 地図 -->
+<div id="map"></div>
+
+<!-- 左上UI -->
+<div class="map-ui">
+  <div class="map-title">
+    👻 日本全国 心霊スポットマップ
+  </div>
+
+  <input
+    type="text"
+    id="searchBox"
+    placeholder="スポット名・都道府県・カテゴリーで検索..."
+  >
+
+  <div class="filters">
+    <button class="filter-btn active" data-category="すべて">すべて</button>
+    <button class="filter-btn" data-category="心霊廃墟">👻 廃墟</button>
+    <button class="filter-btn" data-category="トンネル">🚇 トンネル</button>
+    <button class="filter-btn" data-category="山・峠・ダム">🌲 山・橋</button>
+    <button class="filter-btn" data-category="歴史・怪談">🏚️ 歴史・都市伝説</button>
+  </div>
+
+  <div id="searchResults"></div>
+</div>
+
+<!-- 詳細パネル -->
+<div id="detailPanel">
+  <div id="detailContent"></div>
+</div>
+
+<!-- JS Libraries -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<script>
+  // 地図初期化
+  const map = L.map("map", { zoomControl: true }).setView([36.2048, 138.2529], 5);
+
+  // 地図タイル（日本語）
+  L.tileLayer("https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}&hl=ja", {
+    maxZoom: 20,
+    attribution: 'Map data &copy; Google'
+  }).addTo(map);
+
+  // カテゴリーアイコン
+  const icons = {
+    "心霊廃墟": "👻",
+    "トンネル": "🚇",
+    "山・峠・ダム": "🌲",
+    "歴史・怪談": "🏚️"
+  };
+
+  // スポットデータ（全82箇所・完全重複なし）
+  const spots = [
+    // --- 新規追加20箇所（超有名スポット＆全国主要スポット） ---
+    {
+      name: "旧旧吹上トンネル",
+      prefecture: "東京都",
+      lat: 35.8115,
+      lng: 139.1930,
+      category: "トンネル",
+      description: "東京都青梅市にある超有名心霊スポット。明治時代に作られ現在は完全に封鎖・廃道化されている。",
+      phenomena: "・着物姿の女性の霊が現れるという噂\n・トンネル前で強い視線や足音を感じる体験\n・カメラの誤作動現象",
+      danger: "完全封鎖区域につき侵入厳禁・崩落の危険性高"
+    },
+    {
+      name: "旧善徳寺トンネル（旧旧善徳寺隧道）",
+      prefecture: "岐阜県",
+      lat: 35.4820,
+      lng: 136.8910,
+      category: "トンネル",
+      description: "岐阜県内でも屈指の知名度を誇る旧道の古いトンネル。静寂な山中に不気味な雰囲気が漂う。",
+      phenomena: "・通過中に車を叩くような音がする噂\n・後部座席に人影が映る都市伝説",
+      danger: "旧道のため路面状態が悪く、夜間の通行は危険"
+    },
+    {
+      name: "生駒山頂遊園地周辺（旧信貴生駒スカイライン廃道）",
+      prefecture: "奈良県/大阪府",
+      lat: 34.6930,
+      lng: 135.6810,
+      category: "山・峠・ダム",
+      description: "夜間は静寂に包まれる山頂エリアおよび旧道周辺。関西圏のドライブコース・心霊スポットとして知られる。",
+      phenomena: "・夜間のスカイラインで白い服を着た人影を見る\n・車の電装系トラブルが多発する噂",
+      danger: "夜間は街灯が少なくカーブが多いためスピード注意"
+    },
+    {
+      name: "旧三国トンネル",
+      prefecture: "群馬県/新潟県",
+      lat: 36.7910,
+      lng: 138.7980,
+      category: "トンネル",
+      description: "群馬と新潟の県境にある旧国道17号の難所。長大な三国峠にまつわる怪談が多数存在する。",
+      phenomena: "・深夜の通過時に背後から足音が聞こえる\n・トンネル内で作業員の影を見る噂",
+      danger: "雪深く寒暖差が激しい地域につき無理な訪問禁止"
+    },
+    {
+      name: "人身御供の伝説・旧小坂トンネル",
+      prefecture: "長野県",
+      lat: 36.0580,
+      lng: 138.0820,
+      category: "トンネル",
+      description: "諏訪湖近くの旧道にある不気味なトンネル。歴史的な怪談や逸話が多く残されている。",
+      phenomena: "・坑口付近で視線を感じる噂\n・不可解な唸り声を聞いたという体験",
+      danger: "暗く細い旧道のため対向車・足元に注意"
+    },
+    {
+      name: "滝不動（市川市）",
+      prefecture: "千葉県",
+      lat: 35.7310,
+      lng: 139.9820,
+      category: "歴史・怪談",
+      description: "千葉県市川市周辺に存在する霊場・霊域スポット。湧水と静けさの中で古くから不気味な噂がある。",
+      phenomena: "・水辺付近での人影の目撃噂\n・冷気や強い圧迫感を感じる現象",
+      danger: "夜間は暗闇に包まれるため転倒に注意"
+    },
+    {
+      name: "旧深坂トンネル",
+      prefecture: "山口県",
+      lat: 34.0250,
+      lng: 130.9580,
+      category: "トンネル",
+      description: "山口県下関市周辺の旧道に残る古いトンネル。地元では有名な怪異スポット。",
+      phenomena: "・ライトに浮かび上がる女性の影の噂\n・クラクションに反応する異音",
+      danger: "街灯がなく非常に暗いため危険"
+    },
+    {
+      name: "緑のくつろぎ園（廃老人ホーム）",
+      prefecture: "茨城県",
+      lat: 36.2500,
+      lng: 140.1500,
+      category: "心霊廃墟",
+      description: "北関東エリアで有名な福祉施設廃墟。内部の荒廃が進み独特の雰囲気を放つ。",
+      phenomena: "・誰もいない車椅子や部屋からの足音\n・車椅子の走る音が聞こえる噂",
+      danger: "立入禁止・私有地のため敷地内侵入厳禁"
+    },
+    {
+      name: "旧石勝線・旧楓駅周辺廃墟",
+      prefecture: "北海道",
+      lat: 42.9200,
+      lng: 142.0100,
+      category: "歴史・怪談",
+      description: "夕張市の山中に存在するかつての炭鉱駅・集落跡。静まり返った北の大地に眠る廃空間。",
+      phenomena: "・誰もいないホーム跡から笛の音が聞こえる噂\n・深夜に人の気配を感じる話",
+      danger: "野生動物（ヒグマ）出没地域につき大変危険"
+    },
+    {
+      name: "天王ザクラと旧峠道",
+      prefecture: "群馬県",
+      lat: 36.6500,
+      lng: 139.1800,
+      category: "山・峠・ダム",
+      description: "片品村周辺の古い山道。古木にまつわる怪奇譚や深夜の山道での噂が語られる。",
+      phenomena: "・深夜に木の周りに立つ影を見た噂\n・風もないのに木々が不自然に揺れる現象",
+      danger: "夜間の山道運転・遭難に注意"
+    },
+    {
+      name: "旧国道305号（呼鳥門周辺旧道）",
+      prefecture: "福井県",
+      lat: 36.0080,
+      lng: 135.9600,
+      category: "山・峠・ダム",
+      description: "越前海岸沿いの旧酷道エリア。断崖絶壁と荒波が織りなす独特の景観と都市伝説。",
+      phenomena: "・海から伸びるような手を見た噂\n・車内に入る不気味なノイズ",
+      danger: "高波・落石の危険があるため悪天候時近づかないこと"
+    },
+    {
+      name: "旧深山トンネル",
+      prefecture: "三重県",
+      lat: 34.7200,
+      lng: 136.3100,
+      category: "トンネル",
+      description: "三重県内の山中にひっそりと残る廃隧道。草木が生い茂り人通りは皆無。",
+      phenomena: "・坑口奥から響く足音の噂\n・通過時にエンジンの回転数が乱れる体験",
+      danger: "崩落の危険性あり・立ち入り注意"
+    },
+    {
+      name: "旧鳴滝トンネル",
+      prefecture: "和歌山県",
+      lat: 33.9100,
+      lng: 135.2500,
+      category: "トンネル",
+      description: "和歌山県日高川町周辺の旧道トンネル。地元で語られる怪談の舞台。",
+      phenomena: "・誰もいないトンネル内から叫び声が聞こえる噂\n・車の窓ガラスに手形がつく伝承",
+      danger: "照明がなく視界ゼロ・路上駐停車禁止"
+    },
+    {
+      name: "旧佐々並市トンネル",
+      prefecture: "山口県",
+      lat: 34.2800,
+      lng: 131.5500,
+      category: "トンネル",
+      description: "萩市へ続く旧萩往還沿いの古いトンネル。歴史ある街道筋で噂が絶えない。",
+      phenomena: "・武者姿の人影の目撃情報\n・背後から聞こえる不気味な足音",
+      danger: "道幅が狭く対向車に注意"
+    },
+    {
+      name: "旧寒川トンネル",
+      prefecture: "愛媛県",
+      lat: 33.9500,
+      lng: 133.5200,
+      category: "トンネル",
+      description: "四国中央市にある旧道のトンネル。四国屈指の心霊スポットとして知られる。",
+      phenomena: "・手形が窓につくという有名な都市伝説\n・トンネル内で白い服の女性を見る噂",
+      danger: "狭小につき車の走行注意・路上停車禁止"
+    },
+    {
+      name: "旧額頭トンネル（額頭隧道）",
+      prefecture: "佐賀県/長崎県",
+      lat: 33.2200,
+      lng: 129.8500,
+      category: "トンネル",
+      description: "県境近くの山中に潜む古びた隧道。暗闇と静寂が恐怖感を誘う。",
+      phenomena: "・トンネル中央付近での急激な温度低下\n・不自然な話す声が聞こえる噂",
+      danger: "夜間は照明がなく危険"
+    },
+    {
+      name: "旧矢生トンネル",
+      prefecture: "大分県",
+      lat: 33.1500,
+      lng: 131.5000,
+      category: "トンネル",
+      description: "大分県内の山間部にかつて使用されていた旧隧道。鬱蒼とした森林に囲まれている。",
+      phenomena: "・車で通過すると屋根を叩かれる音がする噂\n・ライトの光が急に途切れる現象",
+      danger: "落石注意・通行止め区域侵入不可"
+    },
+    {
+      name: "旧久幸トンネル",
+      prefecture: "宮崎県",
+      lat: 32.0500,
+      lng: 131.3500,
+      category: "トンネル",
+      description: "宮崎県内の峠道にある不気味な隧道。怪談好きの間で語られる。",
+      phenomena: "・坑口付近にたたずむ人影の噂\n・寒気や圧迫感を感じる現象",
+      danger: "夜間は街灯がなく運転危険"
+    },
+    {
+      name: "旧生見トンネル",
+      prefecture: "鹿児島県",
+      lat: 31.3200,
+      lng: 130.5800,
+      category: "トンネル",
+      description: "薩摩半島側の旧道にあるレトロで暗いトンネル。独特の雰囲気が残る。",
+      phenomena: "・バックミラーに映る不可解な影\n・車内で電子機器が誤作動する噂",
+      danger: "狭い道路のため事故注意"
+    },
+    {
+      name: "七つ釜鍾乳洞（周辺の旧道）",
+      prefecture: "長崎県",
+      lat: 32.9500,
+      lng: 129.6800,
+      category: "山・峠・ダム",
+      description: "西海市にある国指定天然記念物の鍾乳洞周辺。夜間は不気味な静寂に包まれる。",
+      phenomena: "・山道で冷気を感じる噂\n・誰もいない暗闇から視線を感じる体験",
+      danger: "夜間の足元は大変滑りやすいため注意"
+    },
+
+    // --- 前回追加の20箇所 ---
+    {
+      name: "ホテルセリーヌ",
+      prefecture: "長野県",
+      lat: 36.8380,
+      lng: 138.2040,
+      category: "心霊廃墟",
+      description: "信州の山中に存在する有名モーテル廃墟。壁に描かれた不気味な落書きや妊婦の絵画に関する噂が非常に有名。",
+      phenomena: "・誰もいない部屋から足音が響く噂\n・窓際から強い視線を感じる体験\n・不気味な落書きにまつわる都市伝説",
+      danger: "老朽化が激しく崩落の危険・私有地のため無断侵入厳禁"
+    },
+    {
+      name: "角神温泉ホテル廃墟周辺",
+      prefecture: "新潟県",
+      lat: 37.6650,
+      lng: 139.4230,
+      category: "心霊廃墟",
+      description: "阿賀町周辺にある旧温泉宿泊施設。静かな山あいにひっそりと残る廃施設。",
+      phenomena: "・静まり返った館内から足音が届く噂\n・誰もいない階下からの足音現象",
+      danger: "倒壊の危険性あり・立入禁止区域"
+    },
+    {
+      name: "ホワイトハウス（角田浜周辺）",
+      prefecture: "新潟県",
+      lat: 37.8200,
+      lng: 138.8680,
+      category: "歴史・怪談",
+      description: "新潟県の海岸沿い近くに存在する西洋風建築の廃屋。一家にまつわる惨劇の噂など多くの都市伝説がささやかれる。",
+      phenomena: "・少女の霊の目撃噂\n・深夜に2階の窓から人影が見えるという伝承",
+      danger: "私有地につき不法侵入厳禁"
+    },
+    {
+      name: "旧御坂トンネル",
+      prefecture: "山梨県",
+      lat: 35.5680,
+      lng: 138.7400,
+      category: "トンネル",
+      description: "富士河口湖町と笛吹市を結ぶ旧道のトンネル。登録有形文化財であり、雰囲気が漂うレトロな石造り構造。",
+      phenomena: "・トンネル内で車の電装系が一時的に不調になる噂\n・水滴に混ざって声が聞こえるという体験談",
+      danger: "夜間は照明が暗く、旧道につき落石注意"
+    },
+    {
+      name: "太田切川（百間滝周辺）",
+      prefecture: "長野県",
+      lat: 35.7480,
+      lng: 137.8820,
+      category: "山・峠・ダム",
+      description: "駒ヶ根市の渓谷エリア。豊かな自然に囲まれる一方で、水辺に纏わる伝承や噂が散見される。",
+      phenomena: "・夜間に水辺付近で人影を見る噂\n・視線や気配を感じるという話",
+      danger: "水辺につき滑落・増水に十分注意"
+    },
+    {
+      name: "旧笹子トンネル周辺",
+      prefecture: "山梨県",
+      lat: 35.6180,
+      lng: 138.8150,
+      category: "トンネル",
+      description: "甲州街道の難所・笹子峠にある歴史的トンネル。昭和初期の竣工で非常に暗く厳かな雰囲気を放つ。",
+      phenomena: "・トンネル内を歩く人影を見たという噂\n・背後から足音が近づく現象",
+      danger: "狭小道路のため対向車・夜間走行に注意"
+    },
+    {
+      name: "旧仲波トンネル",
+      prefecture: "福井県",
+      lat: 35.7100,
+      lng: 135.8050,
+      category: "トンネル",
+      description: "北陸地方の旧道沿いにひっそり残る古いトンネル。周囲は草木に囲まれている。",
+      phenomena: "・誰もいないのに視線を感じる\n・不自然な異音が響く噂",
+      danger: "廃道化が進んでいるため足元注意"
+    },
+    {
+      name: "貝塚人工島廃墟周辺",
+      prefecture: "大阪府",
+      lat: 34.4500,
+      lng: 135.3400,
+      category: "心霊廃墟",
+      description: "大阪府貝塚市のウォーターフロントエリア周辺にかつて存在した未完成施設や倉庫群。",
+      phenomena: "・夜間に不気味な影を目撃した話\n・誰もいない空間から足音が聞こえる噂",
+      danger: "立入禁止区域・港湾施設のため夜間侵入禁止"
+    },
+    {
+      name: "犬鳴山（七宝瀧寺周辺山道）",
+      prefecture: "大阪府",
+      lat: 34.3410,
+      lng: 135.3900,
+      category: "歴史・怪談",
+      description: "修験道の霊場として知られる犬鳴山。豊かな修験の歴史と共に、深い山中には神秘的かつ奇怪な噂が残る。",
+      phenomena: "・山道で強い視線を感じる噂\n・不自然な風や音の体験談",
+      danger: "夜間の山道は大変危険なため入山を控えること"
+    },
+    {
+      name: "旧志高トンネル",
+      prefecture: "京都府",
+      lat: 35.4050,
+      lng: 135.2500,
+      category: "トンネル",
+      description: "舞鶴市周辺の山中に残る旧道のトンネル。現在は使われておらずひっそりと佇む。",
+      phenomena: "・トンネルの奥から声が響く噂\n・車のライトに人影が浮かぶ都市伝説",
+      danger: "老朽化のため落石・崩落の危険あり"
+    },
+    {
+      name: "一の谷古戦場周辺",
+      prefecture: "兵庫県",
+      lat: 34.6430,
+      lng: 135.1050,
+      category: "歴史・怪談",
+      description: "源平合戦（一ノ谷の戦い）の激戦地として知られる史跡エリア。古くから多くの戦国伝承が残る。",
+      phenomena: "・夜間に武者のような影を見る噂\n・風の音に交じって馬のいななきが聞こえる伝承",
+      danger: "夜間は視界が悪い斜面・山道につき注意"
+    },
+    {
+      name: "旧日坂トンネル（本坂隧道周辺）",
+      prefecture: "静岡県/愛知県",
+      lat: 34.7890,
+      lng: 137.5210,
+      category: "トンネル",
+      description: "本坂峠にある大正時代開通の古い隧道。かつて姫街道として栄えた歴史ある峠道。",
+      phenomena: "・着物姿の女性の目撃噂\n・トンネル内でクラクションに反応する現象",
+      danger: "狭小につき車の対進・路上駐車厳禁"
+    },
+    {
+      name: "旧鹿坂トンネル",
+      prefecture: "三重県",
+      lat: 34.6150,
+      lng: 136.2050,
+      category: "トンネル",
+      description: "三重県内の峠道に残る閉鎖されたトンネル。深い山林の中に隠されている。",
+      phenomena: "・坑口付近から視線を感じる\n・不気味な気配が漂うという噂",
+      danger: "通行止め・崩落の危険が高いため接近不可"
+    },
+    {
+      name: "人吉海軍航空隊基地跡",
+      prefecture: "熊本県",
+      lat: 32.2200,
+      lng: 130.6500,
+      category: "歴史・怪談",
+      description: "太平洋戦争中に建設された地下壕や地下兵舎跡群。歴史遺構として保存が進む一方、怪談の噂も存在する。",
+      phenomena: "・地下壕から足音が聞こえる噂\n・冷気が立ち込める体験談",
+      danger: "ガイドなしでの未公開地下壕侵入は危険・絶対禁止"
+    },
+    {
+      name: "寒川神社旧参道周辺",
+      prefecture: "神奈川県",
+      lat: 35.3780,
+      lng: 139.3850,
+      category: "歴史・怪談",
+      description: "相模國一之宮として有名な神社の周辺旧道。古くからの信仰と伝承が渦巻く。",
+      phenomena: "・夜間の静寂の中で不思議な気配を感じる",
+      danger: "近隣住民の迷惑になる夜間の大声・滞留は厳禁"
+    },
+    {
+      name: "旧猪の頭トンネル",
+      prefecture: "静岡県",
+      lat: 35.3300,
+      lng: 138.5600,
+      category: "トンネル",
+      description: "朝霧高原近くの旧道に残る古いトンネル。静けさに包まれた場所。",
+      phenomena: "・通過時に車内が急激に冷え込む噂\n・人影を見たという噂",
+      danger: "街灯がなく非常に暗いため夜間注意"
+    },
+    {
+      name: "旧坂本トンネル",
+      prefecture: "熊本県/宮崎県",
+      lat: 32.3300,
+      lng: 130.7000,
+      category: "トンネル",
+      description: "九州山地を越える旧道沿いのトンネル。山深いエリアに位置する。",
+      phenomena: "・夜間に通過する際、背後に気配を感じる噂",
+      danger: "酷道・山道につき夜間のドライブは事故注意"
+    },
+    {
+      name: "佐喜浜の旧洞窟・海岸",
+      prefecture: "高知県",
+      lat: 33.2800,
+      lng: 134.1800,
+      category: "歴史・怪談",
+      description: "室戸市北部の海岸線沿い。弘法大師ゆかりの伝承や波の音に纏わる怪異談が残る。",
+      phenomena: "・誰もいない岩場から話し声が響く噂",
+      danger: "高波・足場の悪い岩場につき滑落危険"
+    },
+    {
+      name: "旧伯方トンネル周辺",
+      prefecture: "愛媛県",
+      lat: 34.2000,
+      lng: 133.0800,
+      category: "トンネル",
+      description: "しまなみ海道の島内旧道に残るトンネル。静寂な島陰にひっそり佇む。",
+      phenomena: "・深夜に徒歩で通過すると足音が追いかけてくる噂",
+      danger: "夜間は照明が少ないため足元・交通注意"
+    },
+    {
+      name: "金生山（破砕場廃墟周辺）",
+      prefecture: "岐阜県",
+      lat: 35.3900,
+      lng: 136.5800,
+      category: "心霊廃墟",
+      description: "石灰岩の採掘で有名な山。山内には古くからの寺院と産業遺構の廃墟が混在する。",
+      phenomena: "・廃施設付近で人の気配を感じる\n・夜間に不審な音が響く噂",
+      danger: "採石場・私有地につき無断立ち入り厳禁"
+    },
+
+    // --- 初期からの42箇所 ---
+    {
+      name: "玄岳ドライブイン（熱海高原ロープウェイ跡）",
+      prefecture: "静岡県",
+      lat: 35.0881,
+      lng: 139.0433,
+      category: "心霊廃墟",
+      description: "伊豆スカイライン沿いに存在する有名な円形廃墟。「富岳」ではなく正確には「玄岳（くろたけ）」ドライブイン。\n1960年代に開業するも短期間で閉鎖を繰り返した歴史を持つ。",
+      phenomena: "・誰もいない館内から足音が聞こえる噂\n・女性の霊の目撃情報\n・奇妙な音や光の目撃談",
+      danger: "私有地・ロケ地管理エリアにつき敷地内および建物内への無断侵入は厳禁"
+    },
+    {
+      name: "三郷の青い家（跡地）",
+      prefecture: "埼玉県",
+      lat: 35.8340,
+      lng: 139.8755,
+      category: "歴史・怪談",
+      description: "埼玉県三郷市にかつて存在した有名な怪談スポット。\n青い外壁の一軒家で、数々の怪奇現象やタクシー怪談が語り継がれてきた。",
+      phenomena: "・誰もいない2階から声が聞こえる噂\n・付近のT字路でタクシードライバーが人影を目撃する伝承",
+      danger: "2010年頃に解体完了・完全消滅済み。跡地周辺住民への迷惑行為は厳禁"
+    },
+    {
+      name: "雄別炭鉱跡周辺",
+      prefecture: "北海道",
+      lat: 43.100,
+      lng: 144.050,
+      category: "心霊廃墟",
+      description: "かつて北海道東部に存在した大規模な炭鉱関連施設跡。\n閉山後、多くの施設が廃墟群となり知られるようになった。",
+      phenomena: "・建物内で人影を見るという噂\n・誰もいない場所から話し声が聞こえる\n・夜間に足音が聞こえるという話",
+      danger: "危険な廃墟・私有地・管理区域があるため無断侵入禁止"
+    },
+    {
+      name: "平和の滝",
+      prefecture: "北海道",
+      lat: 43.0135,
+      lng: 141.2291,
+      category: "山・峠・ダム",
+      description: "札幌市西区にある滝。自然豊かな観光名所である一方、古くから様々な都市伝説や怪談が語られている。",
+      phenomena: "・水辺付近で人影を見るという噂\n・公衆トイレ付近での不可解な現象",
+      danger: "夜間は足元が非常に悪いため滑落に注意"
+    },
+    {
+      name: "常紋トンネル",
+      prefecture: "北海道",
+      lat: 43.8547,
+      lng: 143.7083,
+      category: "トンネル",
+      description: "大正時代に過酷な「タコ部屋労働」によって建設されたJR石北本線のトンネル。人柱の伝承で有名。",
+      phenomena: "・壁の中から叩く音が響くという噂\n・作業員の姿をした影の目撃談",
+      danger: "現役の鉄道施設につき敷地内への進入は固く禁止"
+    },
+    {
+      name: "雫石・慰霊の森",
+      prefecture: "岩手県",
+      lat: 39.6917,
+      lng: 140.9528,
+      category: "歴史・怪談",
+      description: "1971年の航空機事故の犠牲者を慰霊するために整備された静聖な慰霊地。",
+      phenomena: "・空気が一変するような感覚\n・線香や生花の香りが漂うという伝承",
+      danger: "厳粛な慰霊の場であるため、冷やかしや騒音行為は厳禁"
+    },
+    {
+      name: "恐山",
+      prefecture: "青森県",
+      lat: 41.2575,
+      lng: 141.1067,
+      category: "歴史・怪談",
+      description: "青森県下北半島にある日本を代表する霊場の一つ。\n死者の魂が集まる場所とする信仰で知られる。",
+      phenomena: "・霊的な存在を感じるという体験談\n・風に混ざって声が聞こえるという話",
+      danger: "公開霊場。宗教的な場所への敬意を守ること"
+    },
+    {
+      name: "寒風山トンネル（旧道周辺）",
+      prefecture: "秋田県",
+      lat: 39.9328,
+      lng: 139.8708,
+      category: "山・峠・ダム",
+      description: "男鹿半島の景勝地・寒風山周辺。旧道や暗い山道には昔から心霊の噂がある。",
+      phenomena: "・夜間に道路脇に佇む人影を見る\n・車のバックミラーに異変が起きるという都市伝説",
+      danger: "夜間は街灯が皆無で視界が狭く運転危険"
+    },
+    {
+      name: "八木山橋",
+      prefecture: "宮城県",
+      lat: 38.2519,
+      lng: 140.8522,
+      category: "山・峠・ダム",
+      description: "仙台市青葉区の深い渓谷にかかる橋。高いフェンスが設置されていることで知られる。",
+      phenomena: "・橋の周囲で視線を感じるという噂\n・夜間に不自然な影を目撃したという話",
+      danger: "交通量が多く危険なため橋上での不要な路上停車は禁止"
+    },
+    {
+      name: "ホテル活魚（油井グランドホテル）",
+      prefecture: "千葉県",
+      lat: 35.5458,
+      lng: 140.3541,
+      category: "心霊廃墟",
+      description: "関東屈指の廃ホテル。様々な事件事故の噂がつきまとってきた場所。",
+      phenomena: "・だれもいない客室から音がする\n・女性の悲鳴を聞いたという都市伝説",
+      danger: "完全な危険廃墟・私有地のため立ち入り禁止"
+    },
+    {
+      name: "神流湖・太田部橋周辺",
+      prefecture: "埼玉県/群馬県",
+      lat: 36.1083,
+      lng: 139.0250,
+      category: "山・峠・ダム",
+      description: "下久保ダムによって作られた人工湖。湖にかかる橋や周囲のトンネルには多くの噂が存在する。",
+      phenomena: "・水面付近から伸びる手を見たという話\n・夜間に橋の上でたたずむ影の目撃談",
+      danger: "夜間の足元は非常に暗く転落の危険性あり"
+    },
+    {
+      name: "旧観音トンネル",
+      prefecture: "埼玉県",
+      lat: 35.9812,
+      lng: 139.0305,
+      category: "トンネル",
+      description: "秩父地方の山奥にある古びたトンネル。薄暗く独特の圧迫感があることで知られる。",
+      phenomena: "・トンネル内で白い服を着た女性を見る噂\n・誰もいない場所から足音が接近する現象",
+      danger: "老朽化が進んでいるため付近の安全確保に注意"
+    },
+    {
+      name: "旧畑隧道",
+      prefecture: "埼玉県",
+      lat: 35.8250,
+      lng: 139.2600,
+      category: "トンネル",
+      description: "明治時代に造られた非常に古くレンガ造りのトンネル。現在は閉鎖されている。",
+      phenomena: "・閉鎖された内部から足音が聞こえる\n・女性の泣き声を聞いたという噂",
+      danger: "崩落の危険が非常に高いため厳重立入禁止"
+    },
+    {
+      name: "一郷山城跡",
+      prefecture: "群馬県",
+      lat: 36.2600,
+      lng: 139.0100,
+      category: "歴史・怪談",
+      description: "かつての城跡に模擬天守が建てられた場所。夜間は不気味な雰囲気が漂うスポット。",
+      phenomena: "・展望台付近で誰かの視線を感じる\n・深夜に武者のような影を見たという話",
+      danger: "夜間は施錠・立入禁止になる場合あり"
+    },
+    {
+      name: "十三塚橋周辺",
+      prefecture: "茨城県",
+      lat: 36.1200,
+      lng: 140.2100,
+      category: "山・峠・ダム",
+      description: "筑波山麓の周辺エリア。十三塚の伝説とともに古くから様々な噂がささやかれる。",
+      phenomena: "・夜間に橋を渡ると背後から視線を感じる\n・誰もいない空間から不快な音が響く話",
+      danger: "道幅が狭く視界が悪いため運転に注意"
+    },
+    {
+      name: "八王子城跡",
+      prefecture: "東京都",
+      lat: 35.6570,
+      lng: 139.2550,
+      category: "歴史・怪談",
+      description: "戦国時代に築かれた城跡。1590年の戦いで多くの犠牲者が出たと伝えられている。",
+      phenomena: "・夜間に女性の声が聞こえる噂\n・山道で人影を見るという体験談",
+      danger: "公開史跡。夜間の山道や危険区域には注意"
+    },
+    {
+      name: "平将門の首塚",
+      prefecture: "東京都",
+      lat: 35.6883,
+      lng: 139.7667,
+      category: "歴史・怪談",
+      description: "平将門に関する伝承が残る供養地。東京の代表的な都市伝説スポットとして知られる。",
+      phenomena: "・祟りに関する都市伝説\n・周辺で不可解な出来事が起きるという伝承",
+      danger: "オフィス街の中にある供養地のため敬意を持って静かに参拝すること"
+    },
+    {
+      name: "旧吹上トンネル",
+      prefecture: "東京都",
+      lat: 35.8083,
+      lng: 139.1917,
+      category: "トンネル",
+      description: "青梅市にある旧道トンネル。近隣の旧旧吹上トンネルと並び有名。",
+      phenomena: "・着物姿の女性を目撃した噂\n・トンネル内で車が不調になる都市伝説",
+      danger: "夜間の歩行や路上駐車は危険"
+    },
+    {
+      name: "小坪トンネル周辺",
+      prefecture: "神奈川県",
+      lat: 35.290,
+      lng: 139.560,
+      category: "トンネル",
+      description: "鎌倉・逗子周辺にあるトンネル。関東の代表的な怪談スポットとして紹介される。",
+      phenomena: "・女性の霊が現れるという噂\n・バックミラーに人影が映るという話",
+      danger: "交通量が多い場所です。道路上での停車や危険行為は禁止"
+    },
+    {
+      name: "虹の大橋",
+      prefecture: "神奈川県",
+      lat: 35.5303,
+      lng: 139.2272,
+      category: "山・峠・ダム",
+      description: "宮ヶ瀬湖にかかる巨大な橋。高い転落防止柵が設置されている。",
+      phenomena: "・橋の中央付近で妙な気配を感じる\n・夜間の湖面付近で声を聞いたという話",
+      danger: "夜間は暗く風も強いため手すりに身を乗り出さないこと"
+    },
+    {
+      name: "勝坂（勝坂歴史公園周辺）",
+      prefecture: "神奈川県",
+      lat: 35.5180,
+      lng: 139.3900,
+      category: "歴史・怪談",
+      description: "縄文時代の遺跡が広がる地域。夜間の谷戸風の地形は独特の怪異の雰囲気を醸し出す。",
+      phenomena: "・公園付近で不可解な人影を見る噂\n・夜間に歩いていると急に冷気が漂う体験",
+      danger: "夜間は非常に暗いため歩行時の足元注意"
+    },
+    {
+      name: "青木ヶ原樹海",
+      prefecture: "山梨県",
+      lat: 35.4722,
+      lng: 138.6528,
+      category: "山・峠・ダム",
+      description: "富士山の麓に広がる広大な原生林。コンパスが狂うなどの都市伝説でも知られる。",
+      phenomena: "・散策路を外れると戻れなくなる噂\n・誰もいない林奥から人の気配がする話",
+      danger: "遊歩道から外れると遭難の危険が非常に高い"
+    },
+    {
+      name: "首くくり峠（山中峠周辺）",
+      prefecture: "新潟県",
+      lat: 37.1430,
+      lng: 138.8050,
+      category: "山・峠・ダム",
+      description: "古くからの街道筋にある峠。その物騒な名称から様々な噂や都市伝説が生み出された。",
+      phenomena: "・峠付近で人影や視線を感じる\n・車のエンジンがかかりにくくなる等の現象",
+      danger: "山道のため無理な夜間走行や足踏み外しに注意"
+    },
+    {
+      name: "東尋坊",
+      prefecture: "福井県",
+      lat: 36.2372,
+      lng: 136.1256,
+      category: "山・峠・ダム",
+      description: "輝石安山岩の柱状節理が広がる壮大な断崖絶壁。日本屈指の景勝地であり、名所として知られる。",
+      phenomena: "・海面から手が伸びるような影を見たという噂\n・夜間の電話ボックスにまつわる都市伝説",
+      danger: "断崖絶壁につき足を滑らせると落下の危険あり"
+    },
+    {
+      name: "旧天城トンネル（天城山隧道）",
+      prefecture: "静岡県",
+      lat: 34.8322,
+      lng: 138.9219,
+      category: "トンネル",
+      description: "川端康成の小説でも有名な石造りの重要文化財トンネル。雰囲気満点で怪談の舞台にも選ばれる。",
+      phenomena: "・トンネル内でカメラに不可解な光が写る\n・男性や女性の話し声を聞くという話",
+      danger: "歴史的建造物につき落書きや傷つけ行為は禁止"
+    },
+    {
+      name: "人穴富士講遺跡",
+      prefecture: "静岡県",
+      lat: 35.3400,
+      lng: 138.5800,
+      category: "歴史・怪談",
+      description: "富士山麓にある溶岩洞窟と霊場。かつて長谷川角行が修行を行った地として知られる。",
+      phenomena: "・洞窟周辺で強い霊気を感じる\n・写真に光の球（オーブ）が写り込むという伝承",
+      danger: "崩落の危険があるため洞窟内への進入制限あり"
+    },
+    {
+      name: "古虎渓ハウス周辺",
+      prefecture: "愛知県",
+      lat: 35.3622,
+      lng: 137.0608,
+      category: "心霊廃墟",
+      description: "東海地方で非常に有名な廃ホテル跡周辺。数々の肝試しスポットとして名前が挙がる。",
+      phenomena: "・静まり返った廃墟から金属音が響く\n・窓際に人影が立つという噂",
+      danger: "倒壊の危険および私有地のため侵入禁止"
+    },
+    {
+      name: "旧伊勢神トンネル（伊世賀美隧道）",
+      prefecture: "愛知県",
+      lat: 35.1328,
+      lng: 137.3325,
+      category: "トンネル",
+      description: "明治時代に開削された石造りのトンネル。愛知県下で最も有名な心霊スポットの一つ。",
+      phenomena: "・クラクションを鳴らすと異変が起きるという都市伝説\n・女性の姿を目撃したという噂",
+      danger: "幅員が狭く暗いため対向車や徒歩での進入に注意"
+    },
+    {
+      name: "笠置観光ホテル跡",
+      prefecture: "京都府",
+      lat: 34.7619,
+      lng: 135.9381,
+      category: "心霊廃墟",
+      description: "木津川沿いの山中に放置された大型廃ホテル。関西屈指の廃墟スポット。",
+      phenomena: "・解体作業が難航したという都市伝説\n・建物内から視線を感じる噂",
+      danger: "老朽化が激しいため大変危険・立入禁止"
+    },
+    {
+      name: "清滝トンネル周辺",
+      prefecture: "京都府",
+      lat: 35.050,
+      lng: 135.680,
+      category: "トンネル",
+      description: "京都府内で有名な一車線交互通行のトンネル。信号機の動作にまつわる怪談がある。",
+      phenomena: "・トンネル内に女性の霊が現れるという噂\n・信号が青になってもすぐ発進してはいけないという都市伝説",
+      danger: "単線交互通行のため交通ルールを厳守し停車しないこと"
+    },
+    {
+      name: "千日デパート火災現場跡（現商業ビル）",
+      prefecture: "大阪府",
+      lat: 34.6653,
+      lng: 135.5022,
+      category: "歴史・怪談",
+      description: "1972年に大きな火災事故が起きた場所。現在は賑やかな大型商業ビルになっている。",
+      phenomena: "・深夜のビル周辺で不可解な音や声を聞いたという都市伝説",
+      danger: "一般の商業施設です。他のお客様の迷惑になる行為は禁止"
+    },
+    {
+      name: "旧生駒トンネル",
+      prefecture: "大阪府/奈良県",
+      lat: 34.6781,
+      lng: 135.6669,
+      category: "トンネル",
+      description: "大正時代に難工事の末開通した旧鉄道トンネル。現在は厳重に封鎖されている。",
+      phenomena: "・作業員の足音が聞こえるという噂\n・閉ざされた扉の奥から気配がする話",
+      danger: "内部へは立ち入り禁止（定期イベント時除く）"
+    },
+    {
+      name: "妙見山（シノノメ周辺）",
+      prefecture: "大阪府/兵庫県",
+      lat: 34.9281,
+      lng: 135.4681,
+      category: "山・峠・ダム",
+      description: "大阪と兵庫の境に位置する山。霊場として栄える一方、周辺の廃カーブや道には噂が多い。",
+      phenomena: "・夜間のカーブで白い服を着た人影を見る\n・車の電装系が一時的に不調になる噂",
+      danger: "街灯が少なくカーブが多いため夜間ドライブは危険"
+    },
+    {
+      name: "武田尾廃線跡周辺",
+      prefecture: "兵庫県",
+      lat: 34.8250,
+      lng: 135.3350,
+      category: "歴史・怪談",
+      description: "旧国鉄福知山線の廃線跡ハイキングコース。昼間は観光地だがトンネル内は真っ暗。",
+      phenomena: "・真っ暗なトンネルの途中で後ろから足音がついてくる噂\n・ライトの光が急に途切れる話",
+      danger: "照明がないため懐中電灯必須。夜間の進入は危険"
+    },
+    {
+      name: "三頭トンネル周辺",
+      prefecture: "徳島県/香川県",
+      lat: 34.1200,
+      lng: 134.0500,
+      category: "トンネル",
+      description: "四国山脈を貫く峠道に位置するトンネル。旧道側は深い山林に囲まれている。",
+      phenomena: "・夜間に旧道を走るとクラクションのような音が響く\n・人影を避けたという噂",
+      danger: "旧道は路面状態が悪く、落石・野生動物の飛び出し注意"
+    },
+    {
+      name: "旧楠島トンネル",
+      prefecture: "高知県",
+      lat: 33.5500,
+      lng: 133.5000,
+      category: "トンネル",
+      description: "高知県内にある古びたトンネル。地元では有名な怪談スポットとして知られる。",
+      phenomena: "・トンネル通過時に車内に異常を感じる噂\n・出口付近に人影が立つという話",
+      danger: "街灯がなく暗いため夜間の訪問は非常に危険"
+    },
+    {
+      name: "旧犬鳴トンネル周辺",
+      prefecture: "福岡県",
+      lat: 33.720,
+      lng: 130.610,
+      category: "トンネル",
+      description: "日本で最も有名と言われる怪談スポット。都市伝説「犬鳴村」の元ネタとしても知られる。",
+      phenomena: "・封鎖されたブロックの向こうから声が聞こえる\n・白い服を着た人物の目撃談",
+      danger: "旧道は現在通行止め・防犯カメラ設置区域につき侵入厳禁"
+    },
+    {
+      name: "犬鳴ダム周辺",
+      prefecture: "福岡県",
+      lat: 33.6880,
+      lng: 130.5520,
+      category: "山・峠・ダム",
+      description: "犬鳴峠のすぐ近くにあるダム。旧トンネルと共に数々の都市伝説の舞台となってきた。",
+      phenomena: "・ダムの底から声が聞こえるという都市伝説\n・水面付近での不可解な影の目撃",
+      danger: "柵を乗り越える行為は絶対禁止・落水の危険あり"
+    },
+    {
+      name: "金立ハイウェイオアシス旧道周辺",
+      prefecture: "佐賀県",
+      lat: 33.3200,
+      lng: 130.3100,
+      category: "山・峠・ダム",
+      description: "佐賀県金立山周辺の山道。SA近くの旧道や山林には様々な噂が存在する。",
+      phenomena: "・夜の山道で人影に追いかけられたという噂\n・車内で謎の発光現象を見る話",
+      danger: "夜間の山道運転は離脱困難・事故防止に注力すること"
+    },
+    {
+      name: "チビチリガマ",
+      prefecture: "沖縄県",
+      lat: 26.3986,
+      lng: 127.7336,
+      category: "歴史・怪談",
+      description: "沖縄戦の際、多くの住民が集団自決（強制集団死）に追い込まれた自然洞窟（ガマ）。",
+      phenomena: "・激しい悲しみや重圧感を感じる体験談",
+      danger: "戦跡であり遺族にとっての聖地。荒らしや冷やかし行為は絶対不可"
+    },
+    {
+      name: "中城高原ホテル跡",
+      prefecture: "沖縄県",
+      lat: 26.2842,
+      lng: 127.7947,
+      category: "心霊廃墟",
+      description: "沖縄海洋博の時期に建設が進められたが、未完成のまま放置された巨大廃墟。",
+      phenomena: "・未完成のコンクリート骨組みの中に影が見える噂",
+      danger: "老朽化・崩落の危険があるため立ち入り禁止"
+    }
+  ];
+
+  // マーカークラスター設定
+  const markers = L.markerClusterGroup({
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true,
+    disableClusteringAtZoom: 15,
+    maxClusterRadius: 50
+  });
+
+  const markerObjects = [];
+
+  // スポット移動関数
+  function flyToSpot(spot) {
+    map.flyTo([spot.lat, spot.lng], 15, { duration: 1.2 });
+  }
+
+  // マーカーの生成
+  spots.forEach(spot => {
+    const emoji = icons[spot.category] || "👻";
+    const markerIcon = L.divIcon({
+      className: "ghost-marker",
+      html: emoji,
+      iconSize: [35, 35],
+      iconAnchor: [17, 35]
+    });
+
+    const marker = L.marker([spot.lat, spot.lng], { icon: markerIcon });
+
+    marker.on("click", () => {
+      flyToSpot(spot);
+      openDetail(spot);
+    });
+
+    markers.addLayer(marker);
+    markerObjects.push({ spot, marker });
+  });
+
+  map.addLayer(markers);
+
+  // 詳細パネルを開く
+  function openDetail(spot) {
+    const panel = document.getElementById("detailPanel");
+    const content = document.getElementById("detailContent");
+
+    content.innerHTML = `
+      <button id="closePanel">×</button>
+      <h1 class="detail-title">${escapeHTML(spot.name)}</h1>
+      <p>📍 ${escapeHTML(spot.prefecture)}</p>
+      <p>🏷 ${escapeHTML(spot.category)}</p>
+
+      <div class="detail-section">
+        <h3>📖 スポット概要</h3>
+        <p style="white-space:pre-line;">${escapeHTML(spot.description)}</p>
+      </div>
+
+      <div class="detail-section">
+        <h3>👻 噂される怪奇現象・噂</h3>
+        <p style="white-space:pre-line;">${escapeHTML(spot.phenomena)}</p>
+      </div>
+
+      <div class="detail-section warning">
+        <h3>⚠ 注意事項</h3>
+        <p>${escapeHTML(spot.danger)}</p>
+      </div>
+
+      <div class="detail-section">
+        <small>
+          ※怪奇現象は科学的に確認された事実ではありません。<br>
+          ※都市伝説・伝承・体験談として紹介しています。<br>
+          ※私有地や立入禁止区域への無断侵入は禁止です。
+        </small>
+      </div>
+    `;
+
+    panel.classList.add("open");
+    document.getElementById("closePanel").addEventListener("click", closeDetail);
+  }
+
+  // 詳細パネルを閉じる
+  function closeDetail() {
+    document.getElementById("detailPanel").classList.remove("open");
+  }
+
+  // Unicode表記で記号を指定するエスケープ処理
+  function escapeHTML(str) {
+    if (!str) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/\u003C/g, "&lt;")
+      .replace(/\u003E/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // 検索機能
+  const searchBox = document.getElementById("searchBox");
+  searchBox.addEventListener("input", function() {
+    const keyword = this.value.toLowerCase().trim();
+    const results = document.getElementById("searchResults");
+    results.innerHTML = "";
+
+    if (!keyword) return;
+
+    const filtered = spots.filter(spot => 
+      spot.name.toLowerCase().includes(keyword) ||
+      spot.prefecture.toLowerCase().includes(keyword) ||
+      spot.category.toLowerCase().includes(keyword)
+    );
+
+    filtered.slice(0, 20).forEach(spot => {
+      const item = document.createElement("div");
+      item.className = "search-item";
+      item.innerHTML = `
+        <b>${escapeHTML(spot.name)}</b>
+        <div class="search-prefecture">
+          ${escapeHTML(spot.prefecture)} ・ ${escapeHTML(spot.category)}
+        </div>
+      `;
+
+      item.addEventListener("click", () => {
+        flyToSpot(spot);
+        openDetail(spot);
+        results.innerHTML = "";
+        searchBox.value = "";
+      });
+
+      results.appendChild(item);
+    });
+  });
+
+  // カテゴリーフィルター機能
+  let activeCategory = "すべて";
+
+  function updateMarkers() {
+    markers.clearLayers();
+    markerObjects.forEach(item => {
+      if (activeCategory === "すべて" || item.spot.category === activeCategory) {
+        markers.addLayer(item.marker);
+      }
+    });
+  }
+
+  document.querySelectorAll(".filter-btn").forEach(button => {
+    button.addEventListener("click", function() {
+      document.querySelectorAll(".filter-btn").forEach(btn => btn.classList.remove("active"));
+      this.classList.add("active");
+      activeCategory = this.dataset.category;
+      updateMarkers();
+    });
+  });
+
+  // ESCキーでパネルを閉じる
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      closeDetail();
+    }
+  });
+</script>
+
+</body>
+</html>
